@@ -1,0 +1,64 @@
+---
+- name: "Gathering Ec2 Instance Details"
+  become: false
+  hosts: localhost
+  vars:
+    common_tags:
+      project_name: shopping
+      project_environment: production
+
+  tasks:
+
+    - name: "Gather information about all instances"
+      amazon.aws.ec2_instance_info:
+        filters:
+          "tag:Project": "{{ common_tags.project_name }}"
+          "tag:Environment": "{{  common_tags.project_environment }}"
+          instance-state-name: ["running"]
+      register: ec2_instance_details
+
+
+    - name: "Creating Dynamic Inventory Of Backends"
+      ansible.builtin.add_host:
+        groups: "backend_instances"
+        hostname: "{{ item.public_ip_address }}"
+        ansible_ssh_host: "{{ item.public_ip_address }}" 
+        ansible_ssh_port: "22"
+        ansible_ssh_user: "ec2-user"
+        ansible_ssh_private_key_file: "aws.pem"
+        ansible_host_key_checking: no    
+      with_items: "{{ ec2_instance_details.instances }}"
+
+    - name: "Inventory Groups"
+      debug:
+        var: groups
+
+
+- name: Deploying Website
+  hosts: backend_instances
+  become: true
+  serial: 1
+  tasks:
+    - name: "Installing Packages"
+      yum:
+        name:
+          - httpd
+          - php
+
+    - name: "Copying Website Files"
+      copy:
+        src: "../website/"
+        dest: "/var/www/html/"
+        owner: "apache"
+        group: "apache"
+
+
+    - name: "Restarting/Enabling httpd & php Service"
+      service:
+        name: "{{ item }}"
+        state: restarted
+        enabled: true
+      with_items:
+        - httpd
+        - php-fpm
+

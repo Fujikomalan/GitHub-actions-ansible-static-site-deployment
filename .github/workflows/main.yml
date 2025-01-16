@@ -1,0 +1,55 @@
+---
+name: Run Ansible Playbook
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  run-ansible:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout repository
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Step 2: Configure AWS CLI
+      - name: Configure AWS CLI
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Step 3: Add SSH Private Key
+      - name: Adding Private Key
+        run: |
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > aws.pem
+          chmod 400 aws.pem
+
+      # Step 4: Install Ansible and Required Python Libraries
+      - name: Install Ansible and boto3
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ansible boto3 botocore
+          ansible-galaxy collection install amazon.aws
+          ansible --version
+          python -m pip show boto3
+
+      # Step 5: Create Ansible Vault Password File
+      - name: Create Ansible Vault Password File
+        run: echo "${{ secrets.ANSIBLE_VAULT_PASSWORD }}" > vault_password.txt
+
+      # Step 6: Run Ansible Playbook
+      - name: Run Ansible Playbook
+        run: |
+          ansible-playbook ansible/playbook.yml --vault-password-file vault_password.txt
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: false
+          ANSIBLE_PYTHON_INTERPRETER: /usr/bin/python3
+
+      # Step 7: Clean up sensitive files
+      - name: Cleanup
+        run: rm -f aws.pem vault_password.txt
